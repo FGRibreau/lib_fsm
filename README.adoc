@@ -51,7 +51,109 @@ Examples: start, open, close, lock, unlock, load, unload, dump, ship, fail, ente
 
 
 === Usage
-=== API
+==== Example
+[source,sql]
+----
+-- An abstract state machine will allow us to create state machines instances.
+-- Typically, you'll want to store a state machine id in your table column as a foreign key pointing to `lib_fsm.state_machine (state_machine__id)`.
+-- In this code block, we'll create an abstract state machine (by declaring its states and possible transitions between these states).
+do $$
+declare
+    abstract_machine_id uuid;
+    state_a_id uuid;
+    state_b_id uuid;
+    state_c_id uuid;
+begin
+  --                                                    vvv name  vvv description (optional)                                      vvv uuid (optional)                    vvv created_at (optional)
+  abstract_machine_id = lib_fsm.abstract_machine_create('status', 'this abstract state machine will allow us to manage a status', 'cee36b4f-f46b-40cb-be6e-a415829eada6', now());
+
+  -- states
+  --                                                                                                vvv the initial state (there must be one)
+  state_a_id = lib_fsm.abstract_state_create(abstract_machine_id, 'state_a', 'state_a description', true);
+  state_b_id = lib_fsm.abstract_state_create(abstract_machine_id, 'state_b', 'state_b description');
+  state_c_id = lib_fsm.abstract_state_create(abstract_machine_id, 'state_c', 'state_c description');
+
+  -- transitions
+  perform lib_fsm.abstract_transition_create(state_a_id, 'transition_state_a_state_b', state_b_id);
+  perform lib_fsm.abstract_transition_create(state_b_id, 'transition_state_b_state_c', state_c_id);
+end;
+$$;
+
+-- At this point, we have a readily usage abstract state machine and are able to instanciate state machine,
+-- we'll do this through a table:
+
+create table public.fsm_example (
+  -- will have the instanciated state_machine id    vvv abstract_state_machine id
+  status uuid default lib_fsm.state_machine_create ('cee36b4f-f46b-40cb-be6e-a415829eada6') references lib_fsm.state_machine (state_machine__id) on delete cascade
+);
+
+-- create a row
+insert into public.fsm_example default values;
+
+-- check what we have
+select status from public.fsm_example; -- 7c25a444-d16c-469b-9d9f-ad38234b17a8 -> this is our state machine id
+
+-- with it, we can fetch the its current state
+select name
+  from public.fsm_example
+  join lib_fsm.state_machine ON state_machine.state_machine__id = fsm_example.status
+  join lib_fsm.abstract_state ON abstract_state.abstract_state__id = state_machine.abstract_state__id; -- -> state_a
+
+-- transition from state_a to state_b
+select lib_fsm.state_machine_transition('7c25a444-d16c-469b-9d9f-ad38234b17a8', 'transition_state_a_state_b');
+
+-- transition from state_b to state_c
+select lib_fsm.state_machine_transition('7c25a444-d16c-469b-9d9f-ad38234b17a8', 'transition_state_b_state_c');
+
+-- fetch the new current state:
+select name
+  from public.fsm_example
+  join lib_fsm.state_machine ON state_machine.state_machine__id = fsm_example.status
+  join lib_fsm.abstract_state ON abstract_state.abstract_state__id = state_machine.abstract_state__id; -- -> state_c
+
+-- get an history of our state machine (an event triggers a transition):
+select *
+  from lib_fsm.state_machine_event
+  where state_machine__id = '7c25a444-d16c-469b-9d9f-ad38234b17a8';
+-- +----------+--------------------------------------+--------------------------------------+----------------------------+---------------------+-------------------------------+
+-- | event_id | state_machine__id                    | abstract_state__id                   | event                      | abstract_state_name | created_at                    |
+-- |----------+--------------------------------------+--------------------------------------+----------------------------+---------------------+-------------------------------|
+-- | 5        | 7c25a444-d16c-469b-9d9f-ad38234b17a8 | 63451367-2715-4708-a12a-9510e9d4d5f2 | <null>                     | state_a             | 2024-01-25 17:38:32.769021+01 |
+-- | 6        | 7c25a444-d16c-469b-9d9f-ad38234b17a8 | 5eb3cbef-13eb-4011-9f1b-9d03498b1221 | transition_state_a_state_b | state_b             | 2024-01-25 17:38:45.521215+01 |
+-- | 7        | 7c25a444-d16c-469b-9d9f-ad38234b17a8 | 6b71bce8-388f-4ef0-bf16-fb22bd50efd9 | transition_state_b_state_c | state_c             | 2024-01-25 17:38:49.15761+01  |
+-- +----------+--------------------------------------+--------------------------------------+----------------------------+---------------------+-------------------------------+
+----
+
+
+==== Reference
+====== abstract_state_machine:
+
+- `abstract_machine_create(name$ varchar(30), description$ text default null, abstract_machine__id$ uuid default public.gen_random_uuid(), created_at$ timestamptz default now()) returns uuid`
+- `abstract_machine_update(abstract_machine__id$ uuid, name$ varchar(30), description$ text default null) returns void`
+- `abstract_machine_delete(abstract_machine__id$ uuid) returns void`
+
+
+====== state_machine:
+
+- `state_machine_create(abstract_state_machine__id_or_abstract_state__id$ uuid, state_machine__id$ uuid default public.gen_random_uuid()) returns uuid`
+- `state_machine_belongs_to_abstract_machine(state_machine__id$ uuid, abstract_machine__id$ uuid) returns boolean`
+- `state_machine_get(state_machine__id$ uuid) returns lib_fsm.state_machine_state`
+- `state_machine_get_mermaid(abstract_state_machine__id$ uuid) returns text`
+- `state_machine_delete(state_machine__id$ uuid) returns void`
+- `state_machine_transition(state_machine__id$ uuid, event$ lib_fsm.event_identifier, dry_run$ boolean default false) returns lib_fsm.state_machine_state`
+- `state_machine_get_next_transitions(state_machine__id$ uuid) returns setof lib_fsm.abstract_state_machine_transitions`
+
+====== abstract_state:
+
+- `abstract_state_create(abstract_machine__id$ uuid, name$ lib_fsm.abstract_state_identifier, description$ text default null, is_initial$ boolean default false, abstract_state__id$ uuid default public.gen_random_uuid ) returns uuid`
+
+====== abstract_transition:
+
+- `abstract_transition_create(from_abstract_state__id$ uuid, event$ lib_fsm.event_identifier, to_abstract_state__id$ uuid, description$ text default null, created_at$ timestamptz default now()) returns void`
+
+
+
+=== Design
 ==== What was tried before current implementation
 
 > Why did they do that?
