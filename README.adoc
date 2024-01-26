@@ -23,10 +23,10 @@ State change is triggered with an `event`.
 
 A transition is a tuple of a start (previous) `state`, the `event` that will trigger the transition and a next `state`.
 
-An `abstract state machine` describe a `state machine`, its `(abstract) state` and `(abstract) transition`.
+An `abstract state machine` describes a `state machine`, its `(abstract) state` and `(abstract) transition`.
 
 A `state machine` is an instance of an `abstract state machine` and points to an `abstract state`, thus an `abstract state machine`.
-A consistent naming convention is essential to build a futur-proof project.
+A consistent naming convention is essential to build a future-proof project.
 Use https://github.com/FGRibreau/sql-convention/[shared SQL convention] as well as an SQL linter.
 
 [#_states]
@@ -79,7 +79,7 @@ begin
 end;
 $$;
 
--- At this point, we have a readily usage abstract state machine and are able to instanciate state machine,
+-- At this point, we have a readily usable abstract state machine and are able to instantiate state machine,
 -- we'll do this through a table:
 
 create table public.fsm_example (
